@@ -9,17 +9,22 @@ permissions:
   contents: write
 
 jobs:
-  build-aarch64:
-    name: Build aarch64 (Linux / Android static)
+  build-android-arm64:
+    name: Build Android arm64-v8a (Bionic / Termux native)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies & cross-compiler
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++-aarch64-linux-gnu
+          sudo apt-get install -y cmake ninja-build
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
 
       - name: Clone Luau 0.744
         run: |
@@ -30,30 +35,29 @@ jobs:
           cd luau-src
           patch -p1 < ../patches/roblox_encoder.patch
 
-      - name: Configure CMake (aarch64 static)
+      - name: Configure CMake (Android NDK)
         run: |
           cmake -B build -S luau-src \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
-            -DCMAKE_EXE_LINKER_FLAGS="-static" \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-28 \
+            -DANDROID_STL=c++_static \
             -DLUAU_BUILD_TESTS=OFF \
             -DLUAU_BUILD_CLI=ON
 
       - name: Build Luau.Compile.CLI
         run: |
           cmake --build build --target Luau.Compile.CLI -j$(nproc)
-          mv build/luau-compile luau-compile-rbx-linux-arm64
-          chmod +x luau-compile-rbx-linux-arm64
+          mv build/luau-compile luau-compile-rbx-android-arm64
+          chmod +x luau-compile-rbx-android-arm64
 
-      - name: Upload aarch64 artifact
+      - name: Upload Android arm64 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: luau-compile-rbx-linux-arm64
-          path: luau-compile-rbx-linux-arm64
+          name: luau-compile-rbx-android-arm64
+          path: luau-compile-rbx-android-arm64
 
   build-x86_64:
     name: Build x86_64 (Linux static)
@@ -99,7 +103,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [build-aarch64, build-x86_64]
+    needs: [build-android-arm64, build-x86_64]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -114,15 +118,15 @@ jobs:
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.744-rbx1
-          name: "luau-compile-rbx v0.744 (Roblox Dialect)"
+          tag_name: v0.744-rbx2
+          name: "luau-compile-rbx v0.744 (Android NDK & Linux)"
           body: |
             ### Automated Native Luau Compiler with Roblox Opcode Remapping
             - Base: Luau `0.744` (Bytecode Version 14)
             - Cipher: `rbx_op = (std_op * 227) mod 256`
-            - Static linkage for portable deployment on Linux / Android Termux ARM64.
+            - Android arm64-v8a: Native Bionic binary built with Android NDK r26d (bypasses Android seccomp restriction on `set_robust_list`).
           files: |
-            artifacts/luau-compile-rbx-linux-arm64/luau-compile-rbx-linux-arm64
+            artifacts/luau-compile-rbx-android-arm64/luau-compile-rbx-android-arm64
             artifacts/luau-compile-rbx-linux-x86_64/luau-compile-rbx-linux-x86_64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
