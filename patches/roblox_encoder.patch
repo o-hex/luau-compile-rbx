@@ -1,0 +1,37 @@
+--- a/CLI/src/Compile.cpp
++++ b/CLI/src/Compile.cpp
+@@ -6,6 +6,25 @@
+ #include "Luau/CodeGen.h"
+ #include "Luau/Compiler.h"
+ #include "Luau/BytecodeBuilder.h"
++#include "Luau/BytecodeUtils.h"
++
++class RobloxBytecodeEncoder : public Luau::BytecodeEncoder
++{
++public:
++    void encode(uint32_t* data, size_t count) override
++    {
++        for (size_t i = 0; i < count;)
++        {
++            uint8_t op = uint8_t(data[i] & 0xff);
++            int oplen = Luau::getOpLength(LuauOpcode(op));
++            uint8_t rbx_op = uint8_t((op * 227) & 0xff);
++            data[i] = (data[i] & ~0xff) | rbx_op;
++            i += oplen;
++        }
++    }
++};
++
++static RobloxBytecodeEncoder g_rbxEncoder;
+ #include "Luau/Parser.h"
+ #include "Luau/TimeTrace.h"
+ 
+@@ -323,7 +342,7 @@
+ 
+     try
+     {
+-        Luau::BytecodeBuilder bcb;
++        Luau::BytecodeBuilder bcb(&g_rbxEncoder);
+ 
+         Luau::CodeGen::AssemblyOptions options;
+         options.compilationOptions.flags = Luau::CodeGen::CodeGen_ColdFunctions;
